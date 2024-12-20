@@ -1,0 +1,9 @@
+# Core dependencies
+dataclasses-json==0.5.7
+requests==2.31.0
+beautifulsoup4==4.12.2
+
+# Development dependencies
+pytest==7.4.3
+black==23.11.0
+flake8==6.1.0
