@@ -1,149 +1,206 @@
 import json
 from dataclasses import dataclass, asdict
-from typing import List
+from typing import List, Optional, Dict
+from datetime import datetime
 import os
 
 @dataclass
 class Recipe:
-    """
-    A class to represent a recipe.
-
-    Attributes:
-    ----------
-    url : str
-        The URL of the recipe.
-    title : str
-        The title of the recipe.
-    """
     url: str
     title: str
+    categories: List[str]
+    date_added: str = None
 
-class CookbookApp:
-    """
-    A class to represent the Cookbook application.
+    def __post_init__(self):
+        if self.date_added is None:
+            self.date_added = datetime.now().isoformat()
 
-    Attributes:
-    ----------
-    recipes : List[Recipe]
-        A list to store the recipes.
-    filename : str
-        The name of the file where recipes are saved.
+@dataclass
+class Cookbook:
+    name: str
+    description: str
+    recipes: List[Recipe]
 
-    Methods:
-    -------
-    load_recipes():
-        Loads recipes from a file.
-    save_recipes():
-        Saves recipes to a file.
-    add_recipe(url: str, title: str):
-        Adds a new recipe to the list and saves it.
-    list_recipes():
-        Lists all the recipes.
-    run():
-        Runs the main loop of the application.
-    """
+class CookbookManager:
     def __init__(self):
-        """
-        Initializes the CookbookApp with an empty recipe list and loads recipes from a file.
-        """
-        self.recipes: List[Recipe] = []
-        self.filename = "recipes.json"
-        self.load_recipes()
+        self.cookbooks: Dict[str, Cookbook] = {}
+        self.filename = "cookbooks.json"
+        self.load_data()
 
-    def load_recipes(self):
-        """
-        Loads recipes from a JSON file if it exists.
-        """
-        if os.path.exists(self.filename):
+    def load_data(self):
+        if not os.path.exists(self.filename):
+            return
+
+        try:
             with open(self.filename, 'r') as f:
                 data = json.load(f)
-                self.recipes = [Recipe(**r) for r in data]
+                for cookbook_data in data:
+                    recipes = [Recipe(**r) for r in cookbook_data['recipes']]
+                    cookbook = Cookbook(
+                        name=cookbook_data['name'],
+                        description=cookbook_data['description'],
+                        recipes=recipes
+                    )
+                    self.cookbooks[cookbook.name] = cookbook
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"Error loading data: {str(e)}")
+            self.cookbooks = {}
 
-    def save_recipes(self):
-        """
-        Saves the current list of recipes to a JSON file.
-        """
-        with open(self.filename, 'w') as f:
-            json.dump([asdict(r) for r in self.recipes], f, indent=2)
-
-    def add_recipe(self, url: str, title: str):
-        """
-        Adds a new recipe to the list and saves it to the file.
-
-        Parameters:
-        ----------
-        url : str
-            The URL of the recipe.
-        title : str
-            The title of the recipe.
-        """
-        recipe = Recipe(url=url, title=title)
-        self.recipes.append(recipe)
-        self.save_recipes()
-        print(f"Added recipe: {title}")
-
-    def list_recipes(self):
-        """
-        Lists all the recipes in the cookbook.
-        """
-        if not self.recipes:
-            print("No recipes found.")
-            return
+    def save_data(self):
+        data = []
+        for cookbook in self.cookbooks.values():
+            cookbook_dict = {
+                'name': cookbook.name,
+                'description': cookbook.description,
+                'recipes': [asdict(r) for r in cookbook.recipes]
+            }
+            data.append(cookbook_dict)
         
-        print("\nCurrent Recipes:")
+        try:
+            with open(self.filename, 'w') as f:
+                json.dump(data, f, indent=2)
+        except (PermissionError, OSError) as e:
+            print(f"Error saving data: {str(e)}")
+            return False
+        return True
+
+    def validate_cookbook_name(self, name: str) -> bool:
+        """Validate cookbook name"""
+        if not name or not name.strip():
+            print("Cookbook name cannot be empty or whitespace")
+            return False
+        return True
+
+    def validate_recipe(self, url: str, title: str) -> bool:
+        """Validate recipe data"""
+        if not url or not url.strip():
+            print("Recipe URL cannot be empty")
+            return False
+        if not title or not title.strip():
+            print("Recipe title cannot be empty")
+            return False
+        return True
+
+    def create_cookbook(self, name: str, description: str) -> bool:
+        """Create a new cookbook with validation"""
+        if not self.validate_cookbook_name(name):
+            return False
+            
+        if name in self.cookbooks:
+            print(f"Cookbook '{name}' already exists!")
+            return False
+        
+        self.cookbooks[name] = Cookbook(name=name, description=description, recipes=[])
+        return self.save_data()
+
+    def add_recipe(self, cookbook_name: str, url: str, title: str, categories: List[str]) -> bool:
+        """Add a recipe with validation"""
+        if cookbook_name not in self.cookbooks:
+            print(f"Cookbook '{cookbook_name}' not found!")
+            return False
+
+        if not self.validate_recipe(url, title):
+            return False
+
+        recipe = Recipe(url=url, title=title, categories=categories)
+        self.cookbooks[cookbook_name].recipes.append(recipe)
+        return self.save_data()
+
+    def list_cookbooks(self):
+        if not self.cookbooks:
+            print("No cookbooks found.")
+            return
+
+        print("\nAvailable Cookbooks:")
         print("-" * 40)
-        for i, recipe in enumerate(self.recipes, 1):
+        for name, cookbook in self.cookbooks.items():
+            print(f"Name: {name}")
+            print(f"Description: {cookbook.description}")
+            print(f"Number of recipes: {len(cookbook.recipes)}")
+            print("-" * 40)
+
+    def list_recipes(self, cookbook_name: str, category: Optional[str] = None):
+        if cookbook_name not in self.cookbooks:
+            print(f"Cookbook '{cookbook_name}' not found!")
+            return
+
+        cookbook = self.cookbooks[cookbook_name]
+        recipes = cookbook.recipes
+
+        if category:
+            recipes = [r for r in recipes if category in r.categories]
+
+        if not recipes:
+            print(f"No recipes found{' in category ' + category if category else ''}.")
+            return
+
+        print(f"\nRecipes in '{cookbook_name}'{' (Category: ' + category + ')' if category else ''}:")
+        print("-" * 40)
+        for i, recipe in enumerate(recipes, 1):
             print(f"{i}. {recipe.title}")
             print(f"   URL: {recipe.url}")
+            print(f"   Categories: {', '.join(recipe.categories)}")
+            print(f"   Added: {recipe.date_added}")
             print()
 
-    def remove_recipe(self, number: int):
-        """
-        Removes a recipe from the list by its number.
-
-        Parameters:
-        ----------
-        number : int
-            The number of the recipe to remove.
-        """
-        if number < 1 or number > len(self.recipes):
-            print("Invalid recipe number.")
-            return
+    def search_recipes(self, query: str):
+        results = []
+        for cookbook in self.cookbooks.values():
+            for recipe in cookbook.recipes:
+                if query.lower() in recipe.title.lower():
+                    results.append((cookbook.name, recipe))
         
-        recipe = self.recipes.pop(number - 1)
-        self.save_recipes()
-        print(f"Removed recipe: {recipe.title}")
+        if not results:
+            print(f"No recipes found matching '{query}'")
+            return
+
+        print(f"\nSearch results for '{query}':")
+        print("-" * 40)
+        for cookbook_name, recipe in results:
+            print(f"Cookbook: {cookbook_name}")
+            print(f"Title: {recipe.title}")
+            print(f"URL: {recipe.url}")
+            print(f"Categories: {', '.join(recipe.categories)}")
+            print()
 
     def run(self):
-        """
-        Runs the main loop of the application, displaying the menu and handling user input.
-        """
         while True:
-            print("\nCookbook Menu:")
-            print("1. Add Recipe")
-            print("2. List Recipes")
-            print("3. Remove Recipe")
-            print("4. Exit")
+            print("\nCookbook Manager Menu:")
+            print("1. Create New Cookbook")
+            print("2. Add Recipe to Cookbook")
+            print("3. List Cookbooks")
+            print("4. List Recipes in Cookbook")
+            print("5. Search Recipes")
+            print("6. Exit")
             
-            choice = input("\nEnter your choice (1-3): ")
+            choice = input("\nEnter your choice (1-6): ")
             
             if choice == "1":
-                url = input("Enter recipe URL: ")
-                if not url.strip():
-                    continue
-                title = input("Enter recipe title: ")
-                if not title.strip():
-                    continue
-                self.add_recipe(url, title)
+                name = input("Enter cookbook name: ")
+                description = input("Enter cookbook description: ")
+                self.create_cookbook(name, description)
             
             elif choice == "2":
-                self.list_recipes()
-
+                cookbook_name = input("Enter cookbook name: ")
+                url = input("Enter recipe URL: ")
+                title = input("Enter recipe title: ")
+                categories = input("Enter categories (comma-separated): ").split(',')
+                categories = [c.strip() for c in categories if c.strip()]
+                self.add_recipe(cookbook_name, url, title, categories)
+            
             elif choice == "3":
-                number = int(input("Enter the recipe number to remove: "))
-                self.remove_recipe(number)
-
+                self.list_cookbooks()
+            
             elif choice == "4":
+                cookbook_name = input("Enter cookbook name: ")
+                category = input("Enter category to filter (or press Enter for all): ").strip()
+                self.list_recipes(cookbook_name, category if category else None)
+            
+            elif choice == "5":
+                query = input("Enter search term: ")
+                self.search_recipes(query)
+            
+            elif choice == "6":
                 print("Goodbye!")
                 break
             
@@ -151,5 +208,5 @@ class CookbookApp:
                 print("Invalid choice. Please try again.")
 
 if __name__ == "__main__":
-    app = CookbookApp()
+    app = CookbookManager()
     app.run()
